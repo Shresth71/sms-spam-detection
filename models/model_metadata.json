@@ -1,0 +1,49 @@
+{
+  "model_name": "Multinomial Naive Bayes",
+  "model_class": "MultinomialNB",
+  "decision_threshold": 0.5358216185671462,
+  "probability_class_order": [
+    "ham",
+    "spam"
+  ],
+  "positive_label": "spam",
+  "random_state": 42,
+  "trained_at": "2026-11-16T17:19:26.052153+00:00",
+  "dataset_rows": 5167,
+  "train_rows": 4133,
+  "validation_rows": 1034,
+  "test_rows": 1034,
+  "vectorizer_parameters": {
+    "analyzer": "word",
+    "binary": false,
+    "decode_error": "strict",
+    "dtype": "float64",
+    "encoding": "utf-8",
+    "input": "content",
+    "lowercase": true,
+    "max_df": 0.95,
+    "max_features": 20000,
+    "min_df": 2,
+    "ngram_range": [
+      1,
+      2
+    ],
+    "norm": "l2",
+    "preprocessor": null,
+    "smooth_idf": true,
+    "stop_words": "english",
+    "strip_accents": null,
+    "sublinear_tf": false,
+    "token_pattern": "(?u)\\b\\w\\w+\\b",
+    "tokenizer": null,
+    "use_idf": true,
+    "vocabulary": null
+  },
+  "model_parameters": {
+    "alpha": 0.1,
+    "class_prior": null,
+    "fit_prior": true,
+    "force_alpha": true
+  },
+  "threshold_selection": "F1 maximized on the separate stratified validation set; ties favor recall."
+}

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fc">
+  <title>TextShield — SMS intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('dashboard') }}" aria-label="TextShield home">
+        <span class="brand-mark">T</span>
+        <span>text<span class="brand-light">shield</span></span>
+      </a>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="navigation" aria-label="Main navigation">
+        <a class="nav-link active" href="#overview"><span class="nav-icon">⌂</span>Overview</a>
+        <a class="nav-link" href="#classifier"><span class="nav-icon">✳</span>SMS scanner</a>
+        <a class="nav-link" href="#model"><span class="nav-icon">▥</span>Model performance</a>
+        <a class="nav-link" href="#database"><span class="nav-icon">◫</span>Data insights</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-status">
+          <span class="status-dot {{ 'online' if mongo_connected else 'offline' }}"></span>
+          <div>
+            <strong>Database</strong>
+            <small>{{ 'Connected' if mongo_connected else 'Not connected' }}</small>
+          </div>
+        </div>
+        <p>SMS spam detection<br>Machine learning workspace</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb">Workspace <span>/</span> Overview</div>
+        <div class="topbar-right">
+          <span class="live-indicator"><i></i>{{ 'LIVE DATA' if mongo_connected else 'LOCAL MODE' }}</span>
+          <div class="avatar">TS</div>
+        </div>
+      </header>
+
+      <div class="page-wrap" id="overview">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-stack" aria-live="polite">
+              {% for category, message_text in messages %}
+                <div class="flash {{ category }}">{{ message_text }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <section class="welcome-row">
+          <div>
+            <div class="eyebrow">SMS SPAM DETECTION</div>
+            <h1>Welcome back<span class="heading-dot">.</span></h1>
+            <p class="welcome-copy">Your SMS security intelligence at a glance.</p>
+          </div>
+          <form action="{{ url_for('train_model') }}" method="post">
+            <button class="button button-outline" type="submit"><span>⟳</span> Train model</button>
+          </form>
+        </section>
+
+        <section class="metric-grid" aria-label="Key metrics">
+          <article class="metric-card">
+            <div class="metric-top"><span>Model accuracy</span><span class="metric-icon purple">◉</span></div>
+            <div class="metric-value">{{ metrics.accuracy|percent if metrics else '—' }}</div>
+            <div class="metric-note">Held-out test set</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Precision</span><span class="metric-icon blue">⌖</span></div>
+            <div class="metric-value">{{ metrics.precision|percent if metrics else '—' }}</div>
+            <div class="metric-note">Spam classification</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Recall</span><span class="metric-icon green">↗</span></div>
+            <div class="metric-value">{{ metrics.recall|percent if metrics else '—' }}</div>
+            <div class="metric-note">Spam classification</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Predictions made</span><span class="metric-icon orange">✳</span></div>
+            <div class="metric-value">{{ analytics.total_predictions if analytics else '—' }}</div>
+            <div class="metric-note">{{ 'Across all sessions' if analytics else 'Connect MongoDB for totals' }}</div>
+          </article>
+        </section>
+
+        <section class="content-grid" id="classifier">
+          <article class="panel scanner-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">CLASSIFIER</div>
+                <h2>Scan a message</h2>
+                <p>Paste a text message to estimate whether it is spam.</p>
+              </div>
+              <span class="panel-symbol">✳</span>
+            </div>
+            <form action="{{ url_for('predict') }}" method="post">
+              <label class="field-label" for="message">MESSAGE CONTENT</label>
+              <textarea id="message" name="message" maxlength="2000" placeholder="Paste an SMS message here…" required>{{ message }}</textarea>
+              <div class="form-footer">
+                <span>Up to 2,000 characters</span>
+                <button class="button button-primary" type="submit">Analyze message <span>→</span></button>
+              </div>
+            </form>
+
+            {% if prediction %}
+              <div class="result-card {{ prediction.predicted_label }}">
+                <div class="result-heading">
+                  <div class="result-badge">{{ '!' if prediction.predicted_label == 'spam' else '✓' }}</div>
+                  <div>
+                    <span class="field-label">PREDICTION</span>
+                    <h3>{{ prediction.predicted_label|upper }}</h3>
+                  </div>
+                  {% if prediction_id %}<span class="saved-badge">Saved</span>{% endif %}
+                </div>
+                {% if prediction.has_probabilities %}
+                  <div class="probability-row">
+                    <div class="probability-label"><span>Spam likelihood</span><strong>{{ prediction.spam_probability|percent }}</strong></div>
+                    <div class="progress-track"><span class="progress-fill spam-fill" style="width: {{ prediction.spam_probability * 100 }}%"></span></div>
+                  </div>
+                  <div class="probability-row">
+                    <div class="probability-label"><span>Ham likelihood</span><strong>{{ prediction.ham_probability|percent }}</strong></div>
+                    <div class="progress-track"><span class="progress-fill ham-fill" style="width: {{ prediction.ham_probability * 100 }}%"></span></div>
+                  </div>
+                {% else %}
+                  <p class="feedback-hint">The selected model provides a decision score, not calibrated spam/ham probabilities.</p>
+                {% endif %}
+                {% if prediction_id %}
+                  <form action="{{ url_for('feedback') }}" method="post" class="feedback-form">
+                    <label class="field-label" for="correct_label">HELP IMPROVE THE MODEL</label>
+                    <div class="feedback-fields">
+                      <select id="correct_label" name="correct_label" aria-label="Correct label">
+                        <option value="ham">Actually ham</option>
+                        <option value="spam">Actually spam</option>
+                      </select>
+                      <input name="feedback" placeholder="Optional context" required maxlength="1000">
+                      <button class="button button-dark" type="submit">Send feedback</button>
+                    </div>
+                  </form>
+                {% elif not mongo_connected %}
+                  <p class="feedback-hint">Connect MongoDB to save predictions and submit feedback.</p>
+                {% endif %}
+              </div>
+            {% endif %}
+          </article>
+
+          <article class="panel model-panel" id="model">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">MODEL HEALTH</div>
+                <h2>Performance snapshot</h2>
+                <p>Evaluation on data the model did not train on.</p>
+              </div>
+              <span class="panel-symbol pale">▥</span>
+            </div>
+            {% if metrics %}
+              <div class="f1-summary">
+                <div><span class="field-label">F1 SCORE</span><strong>{{ metrics.f1_score|percent }}</strong></div>
+                <span class="model-tag">{{ metrics.selected_model if metrics.selected_model is defined else 'Multinomial NB' }}</span>
+              </div>
+              <div class="matrix-title"><span>CONFUSION MATRIX</span><span>Actual / predicted</span></div>
+              <div class="confusion-matrix">
+                <div></div><div class="matrix-axis">Pred. ham</div><div class="matrix-axis">Pred. spam</div>
+                <div class="matrix-axis">Actual ham</div><div class="matrix-cell">{{ metrics.confusion_matrix[0][0] }}</div><div class="matrix-cell">{{ metrics.confusion_matrix[0][1] }}</div>
+                <div class="matrix-axis">Actual spam</div><div class="matrix-cell">{{ metrics.confusion_matrix[1][0] }}</div><div class="matrix-cell">{{ metrics.confusion_matrix[1][1] }}</div>
+              </div>
+              <div class="test-note">
+                {% if metrics.test_rows is defined %}Final holdout: {{ metrics.test_rows }} test messages{% else %}Based on {{ metrics.test_rows }} test messages{% endif %}
+                {% if metrics.decision_threshold is defined %}<br>Spam threshold: {{ '%.3f'|format(metrics.decision_threshold) }} (selected on validation data){% endif %}
+              </div>
+            {% else %}
+              <div class="empty-state">
+                <span class="empty-icon">◌</span>
+                <strong>Model metrics unavailable</strong>
+                <p>Train a model to generate its first evaluation.</p>
+                <form action="{{ url_for('train_model') }}" method="post"><button class="button button-primary" type="submit">Train model</button></form>
+              </div>
+            {% endif %}
+          </article>
+        </section>
+
+        {% if metrics and metrics.comparison is defined %}
+          <section class="panel evaluation-report">
+            <div class="panel-heading compact">
+              <div><h3>Model evaluation &amp; selection</h3><p>Final metrics are from the untouched stratified test split. Candidate comparison uses validation data only.</p></div>
+            </div>
+            <div class="table-scroll evaluation-table">
+              <table>
+                <thead><tr><th>MODEL</th><th>ACCURACY</th><th>SPAM PRECISION</th><th>SPAM RECALL</th><th>SPAM F1</th><th>ROC-AUC</th><th>PR-AUC</th><th>5-FOLD CV F1</th><th>VALIDATION THRESHOLD</th></tr></thead>
+                <tbody>
+                  {% for candidate in metrics.comparison %}
+                    <tr>
+                      <td>{{ candidate.model_name }}{% if candidate.model_name == metrics.selected_model %} <span class="selected-model-badge">Selected</span>{% endif %}</td>
+                      <td>{{ candidate.accuracy|percent }}</td><td>{{ candidate.precision|percent }}</td><td>{{ candidate.recall|percent }}</td><td>{{ candidate.f1_score|percent }}</td>
+                      <td>{{ '%.3f'|format(candidate.roc_auc) }}</td><td>{{ '%.3f'|format(candidate.pr_auc) }}</td><td>{{ '%.3f'|format(candidate.cross_validation_f1) }}</td>
+                      <td>{{ '%.3f'|format(candidate.decision_threshold) if candidate.has_probabilities else 'SVM score: 0' }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="curve-grid">
+              <div class="curve-card">
+                <strong>ROC curve</strong><small>Final test · ROC-AUC {{ '%.3f'|format(metrics.roc_auc) }}</small>
+                <svg viewBox="0 0 300 180" role="img" aria-label="ROC curve on final test set">
+                  <line x1="0" y1="170" x2="300" y2="0" class="curve-baseline"></line>
+                  <polyline points="{{ metrics.roc_curve.svg_points }}" class="roc-line"></polyline>
+                </svg>
+                <div class="curve-axis"><span>False positive rate</span><span>True positive rate</span></div>
+              </div>
+              <div class="curve-card">
+                <strong>Precision–recall curve</strong><small>Final test · PR-AUC {{ '%.3f'|format(metrics.pr_auc) }}</small>
+                <svg viewBox="0 0 300 180" role="img" aria-label="Precision-recall curve on final test set">
+                  <polyline points="{{ metrics.precision_recall_curve.svg_points }}" class="pr-line"></polyline>
+                </svg>
+                <div class="curve-axis"><span>Recall</span><span>Precision</span></div>
+              </div>
+            </div>
+            <div class="table-scroll report-table">
+              <table>
+                <thead><tr><th>FINAL TEST CLASS</th><th>PRECISION</th><th>RECALL</th><th>F1-SCORE</th><th>SUPPORT</th></tr></thead>
+                <tbody>
+                  {% for class_name in ['ham', 'spam'] %}
+                    {% set class_metrics = metrics.classification_report[class_name] %}
+                    <tr><td>{{ 'Legitimate (ham)' if class_name == 'ham' else 'Spam' }}</td><td>{{ class_metrics.precision|percent }}</td><td>{{ class_metrics.recall|percent }}</td><td>{{ class_metrics['f1-score']|percent }}</td><td>{{ class_metrics.support|int }}</td></tr>
+                  {% endfor %}
+                  {% for class_name in ['macro avg', 'weighted avg'] %}
+                    {% set class_metrics = metrics.classification_report[class_name] %}
+                    <tr><td>{{ class_name|title }}</td><td>{{ class_metrics.precision|percent }}</td><td>{{ class_metrics.recall|percent }}</td><td>{{ class_metrics['f1-score']|percent }}</td><td>{{ class_metrics.support|int }}</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="test-note">
+              Dataset: {{ metrics.dataset_rows }} cleaned records; training: {{ metrics.train_rows }}; validation: {{ metrics.validation_rows }}; final test: {{ metrics.test_rows }}.
+              Spam is the positive class. Confusion matrix order is actual ham/spam by predicted ham/spam.
+              False negative: spam predicted as ham; false positive: ham predicted as spam.
+              Probabilities are model estimates, not guaranteed calibrated confidence or prediction accuracy.
+            </div>
+          </section>
+        {% endif %}
+
+        <section class="section-block" id="database">
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">ACTIVITY &amp; DATA</div>
+              <h2>Database insights</h2>
+            </div>
+            <div class="section-actions">
+              {% if mongo_connected %}<span class="connection-chip"><i></i>MongoDB connected</span>{% endif %}
+              <form action="{{ url_for('initialize_database') }}" method="post">
+                <button class="button button-outline" type="submit">Initialize collections</button>
+              </form>
+            </div>
+          </div>
+
+          {% if analytics %}
+            <div class="insights-grid">
+              <article class="panel insight-panel">
+                <div class="panel-heading compact">
+                  <div><h3>Message labels</h3><p>Stored message distribution</p></div>
+                </div>
+                <div class="distribution-bar">
+                  {% for item in analytics.message_percentages %}
+                    <span class="{{ item.label }}" style="width: {{ item.percentage }}%" title="{{ item.label }} {{ item.percentage }}%"></span>
+                  {% endfor %}
+                </div>
+                <div class="legend-list">
+                  {% for item in analytics.message_percentages %}
+                    <div><span class="legend-dot {{ item.label }}"></span><span>{{ item.label|capitalize }}</span><strong>{{ item.count }}</strong><small>{{ item.percentage }}%</small></div>
+                  {% else %}
+                    <div class="muted-row">No labeled messages yet.</div>
+                  {% endfor %}
+                </div>
+              </article>
+              <article class="panel insight-panel">
+                <div class="panel-heading compact">
+                  <div><h3>Prediction mix</h3><p>Average spam likelihood</p></div>
+                </div>
+                <div class="prediction-average">{{ analytics.average_spam_probability|percent }}<span>avg. spam probability</span></div>
+                <div class="legend-list">
+                  {% for item in analytics.prediction_distribution %}
+                    <div><span class="legend-dot {{ item._id }}"></span><span>{{ item._id|capitalize }}</span><strong>{{ item.count }}</strong></div>
+                  {% else %}
+                    <div class="muted-row">No predictions recorded yet.</div>
+                  {% endfor %}
+                </div>
+              </article>
+              <article class="panel insight-panel activity-panel">
+                <div class="panel-heading compact">
+                  <div><h3>Daily activity</h3><p>Predictions over time</p></div>
+                </div>
+                {% if analytics.daily_stats %}
+                  {% set max_daily = analytics.daily_stats|map(attribute='count')|max %}
+                  <div class="daily-chart">
+                    {% for day in analytics.daily_stats[-10:] %}
+                      <div class="daily-column" title="{{ day._id }} — {{ day.count }} predictions">
+                        <span class="daily-value">{{ day.count }}</span>
+                        <div class="daily-bar" style="height: {{ (day.count / max_daily * 100)|round|int }}%"></div>
+                        <span class="daily-label">{{ day._id[5:] }}</span>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="empty-inline">Daily activity will appear after the first prediction.</div>
+                {% endif %}
+              </article>
+            </div>
+
+            <div class="tables-grid">
+              <article class="panel table-panel">
+                <div class="panel-heading compact">
+                  <div><h3>Recent predictions</h3><p>Latest classifier activity</p></div>
+                  <span class="table-count">{{ analytics.recent_predictions|length }} recent</span>
+                </div>
+                {% if analytics.recent_predictions %}
+                  <div class="table-scroll"><table>
+                    <thead><tr><th>MESSAGE</th><th>RESULT</th><th>SPAM SCORE</th><th>TIME</th></tr></thead>
+                    <tbody>
+                      {% for row in analytics.recent_predictions %}
+                        <tr><td class="message-cell">{{ row.message }}</td><td><span class="label-pill {{ row.predicted_label }}">{{ row.predicted_label }}</span></td><td>{{ row.spam_probability|percent }}</td><td class="date-cell">{{ row.created_at[:16] }}</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table></div>
+                {% else %}<div class="empty-inline">No predictions saved yet.</div>{% endif %}
+              </article>
+              <article class="panel table-panel">
+                <div class="panel-heading compact">
+                  <div><h3>Recent messages</h3><p>Messages stored in your database</p></div>
+                  <span class="table-count">{{ analytics.recent_messages|length }} recent</span>
+                </div>
+                {% if analytics.recent_messages %}
+                  <div class="table-scroll"><table>
+                    <thead><tr><th>MESSAGE</th><th>LABEL</th><th>SOURCE</th></tr></thead>
+                    <tbody>
+                      {% for row in analytics.recent_messages %}
+                        <tr><td class="message-cell">{{ row.message }}</td><td><span class="label-pill {{ row.actual_label }}">{{ row.actual_label }}</span></td><td class="date-cell">{{ row.source }}</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table></div>
+                {% else %}<div class="empty-inline">No messages stored yet.</div>{% endif %}
+              </article>
+            </div>
+            {% if analytics.feedback_stats %}
+              <article class="panel feedback-summary">
+                <div class="panel-heading compact"><div><h3>Feedback summary</h3><p>Feedback text recorded by users</p></div></div>
+                <div class="feedback-chips">
+                  {% for item in analytics.feedback_stats[:8] %}
+                    <span>{{ item._id }} <b>{{ item.count }}</b></span>
+                  {% endfor %}
+                </div>
+              </article>
+            {% endif %}
+          {% else %}
+            <div class="panel database-empty">
+              <span class="database-empty-icon">◫</span>
+              <div><h3>Connect MongoDB to see live insights</h3><p>{{ mongo_error or 'Start your local MongoDB service, then initialize the collections.' }}</p></div>
+              <form action="{{ url_for('initialize_database') }}" method="post"><button class="button button-primary" type="submit">Check connection</button></form>
+            </div>
+          {% endif %}
+        </section>
+
+        <footer class="page-footer"><span>TextShield</span> · SMS spam detection with machine learning and MongoDB</footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
